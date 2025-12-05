@@ -16,6 +16,7 @@ pub struct AppConfig {
     pub timeout_ms: u64,
     pub max_concurrent_requests: usize,
     pub cache_ttl_seconds: u64,
+    pub user_agent: String,
     pub providers: Vec<ProviderConfig>,
 }
 
@@ -50,6 +51,8 @@ fn default_config() -> AppConfig {
         timeout_ms: 5_000,
         max_concurrent_requests: 5,
         cache_ttl_seconds: 600,
+        user_agent: "bloody-f4lcon/1.0 (+https://github.com/ind4skylivey/bloody-f4lcon)"
+            .to_string(),
         providers: vec![
             ProviderConfig {
                 name: "github".to_string(),

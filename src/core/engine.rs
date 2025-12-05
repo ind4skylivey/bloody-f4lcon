@@ -12,10 +12,15 @@ use crate::{
     modules::recon::username::check_provider,
 };
 
-#[derive(Clone, Debug)]
+use serde::Serialize;
+
+#[derive(Clone, Debug, Serialize)]
 pub struct ReconResult {
     pub hits: usize,
     pub platforms: Vec<String>,
+    pub failed: Vec<String>,
+    pub restricted: Vec<String>,
+    pub rate_limited: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -35,7 +40,7 @@ impl Engine {
     pub fn new(config: AppConfig) -> Result<Self, FalconError> {
         let timeout = Duration::from_millis(config.timeout_ms);
         let client = reqwest::Client::builder()
-            .user_agent("bloody-f4lcon/1.0 (production)")
+            .user_agent(config.user_agent.clone())
             .timeout(timeout)
             .redirect(reqwest::redirect::Policy::limited(4))
             .build()
@@ -49,7 +54,11 @@ impl Engine {
         })
     }
 
-    pub async fn scan_username(&self, username: &str, use_cache: bool) -> Result<ReconResult, FalconError> {
+    pub async fn scan_username(
+        &self,
+        username: &str,
+        use_cache: bool,
+    ) -> Result<ReconResult, FalconError> {
         if use_cache {
             if let Some(result) = self.check_cache(username) {
                 return Ok(result);
@@ -58,31 +67,38 @@ impl Engine {
 
         let mut hits = 0usize;
         let mut platforms = Vec::new();
+        let mut failed = Vec::new();
+        let mut restricted = Vec::new();
+        let mut rate_limited = Vec::new();
 
-        for provider in self
-            .config
-            .providers
-            .iter()
-            .cloned()
-            .filter(|p| p.enabled)
-        {
-            let permit = self.semaphore.acquire().await.map_err(|_| FalconError::Unknown)?;
+        for provider in self.config.providers.iter().cloned().filter(|p| p.enabled) {
+            let permit = self
+                .semaphore
+                .acquire()
+                .await
+                .map_err(|_| FalconError::Unknown)?;
             let ok = check_one(&self.client, &provider, username).await;
             drop(permit);
 
             match ok {
-                Ok(true) => {
+                Ok(ProviderOutcome::Hit) => {
                     hits += 1;
                     platforms.push(provider.name);
                 }
-                Ok(false) => {}
-                Err(err) => {
-                    tracing::warn!("provider {} error: {}", provider.name, err);
-                }
+                Ok(ProviderOutcome::Miss) => {}
+                Ok(ProviderOutcome::Restricted) => restricted.push(provider.name),
+                Ok(ProviderOutcome::RateLimited) => rate_limited.push(provider.name),
+                Err(err) => failed.push(format!("{}: {}", provider.name, err)),
             }
         }
 
-        let result = ReconResult { hits, platforms };
+        let result = ReconResult {
+            hits,
+            platforms,
+            failed,
+            restricted,
+            rate_limited,
+        };
 
         if use_cache && self.config.cache_ttl_seconds > 0 {
             let mut cache = self.cache.lock().expect("cache poisoned");
@@ -118,6 +134,24 @@ async fn check_one(
     client: &reqwest::Client,
     provider: &ProviderConfig,
     username: &str,
-) -> Result<bool, FalconError> {
-    check_provider(client, provider, username).await
+) -> Result<ProviderOutcome, FalconError> {
+    let mut delay = Duration::from_millis(300);
+    for attempt in 0..3 {
+        match check_provider(client, provider, username).await? {
+            ProviderOutcome::RateLimited if attempt < 2 => {
+                tokio::time::sleep(delay).await;
+                delay *= 2;
+                continue;
+            }
+            other => return Ok(other),
+        }
+    }
+    Ok(ProviderOutcome::RateLimited)
+}
+#[derive(Debug, Clone)]
+pub enum ProviderOutcome {
+    Hit,
+    Miss,
+    Restricted,
+    RateLimited,
 }

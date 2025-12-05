@@ -34,8 +34,10 @@ pub async fn run_tui(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut scan_task: Option<(usize, JoinHandle<Result<crate::core::engine::ReconResult, FalconError>>)> =
-        None;
+    let mut scan_task: Option<(
+        usize,
+        JoinHandle<Result<crate::core::engine::ReconResult, FalconError>>,
+    )> = None;
 
     loop {
         terminal.draw(|f| draw_ui(f, &app))?;
@@ -123,7 +125,11 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
         Span::styled("348 PLATFORMS", Style::default().fg(Color::Cyan)),
         Span::raw(" | ENTER=SCAN"),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Red)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Red)),
+    );
     f.render_widget(title, chunks[0]);
 
     // Targets list
@@ -142,7 +148,10 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
                 Span::raw(" | "),
                 Span::styled(&t.id, Style::default().fg(status_color)),
                 Span::raw(" ["),
-                Span::styled(format!("Hits: {}", t.hits), Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    format!("Hits: {}", t.hits),
+                    Style::default().fg(Color::Cyan),
+                ),
                 Span::raw("]"),
             ]))
         })
@@ -161,10 +170,14 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
     // Intel feed
     let placeholder = Target {
         id: "No Target".to_string(),
+        label: None,
         status: Status::Empty,
         hits: 0,
         emails: vec![],
         platforms: vec![],
+        failed: vec![],
+        restricted: vec![],
+        rate_limited: vec![],
     };
     let current = app.targets.get(app.current_target).unwrap_or(&placeholder);
 
@@ -177,14 +190,27 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
             ),
         ]),
         Line::from(vec![
+            Span::styled("Label: ", Style::default().fg(Color::White)),
+            Span::styled(
+                current.label.as_ref().map(|s| s.as_str()).unwrap_or("None"),
+                Style::default().fg(Color::Gray),
+            ),
+        ]),
+        Line::from(vec![
             Span::styled("Status: ", Style::default().fg(Color::White)),
-            Span::styled(current.status.to_string(), Style::default().fg(Color::Green)),
+            Span::styled(
+                current.status.to_string(),
+                Style::default().fg(Color::Green),
+            ),
         ]),
         Line::from(vec![
             Span::styled("Hits: ", Style::default().fg(Color::White)),
             Span::styled(current.hits.to_string(), Style::default().fg(Color::Cyan)),
         ]),
-        Line::from(vec![Span::styled("Emails:", Style::default().fg(Color::White))]),
+        Line::from(vec![Span::styled(
+            "Emails:",
+            Style::default().fg(Color::White),
+        )]),
     ];
 
     if current.emails.is_empty() {
@@ -212,20 +238,60 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
         Span::styled(platform_line, Style::default().fg(Color::Yellow)),
     ]));
 
-    let intel = Paragraph::new(intel_lines)
-        .block(Block::default().title(" 🛡️ INTEL FEED ").borders(Borders::ALL));
+    if !current.restricted.is_empty() {
+        intel_lines.push(Line::from(vec![
+            Span::styled("Restricted: ", Style::default().fg(Color::White)),
+            Span::styled(
+                current.restricted.join(", "),
+                Style::default().fg(Color::Blue),
+            ),
+        ]));
+    }
+
+    if !current.rate_limited.is_empty() {
+        intel_lines.push(Line::from(vec![
+            Span::styled("Rate limited: ", Style::default().fg(Color::White)),
+            Span::styled(
+                current.rate_limited.join(", "),
+                Style::default().fg(Color::Red),
+            ),
+        ]));
+    }
+
+    if !current.failed.is_empty() {
+        intel_lines.push(Line::from(vec![
+            Span::styled("Failed: ", Style::default().fg(Color::White)),
+            Span::styled(
+                current.failed.join(" | "),
+                Style::default().fg(Color::Magenta),
+            ),
+        ]));
+    }
+
+    let intel = Paragraph::new(intel_lines).block(
+        Block::default()
+            .title(" 🛡️ INTEL FEED ")
+            .borders(Borders::ALL),
+    );
     f.render_widget(intel, chunks[2]);
 
     // Scan progress
     if app.scanning {
         let progress = Gauge::default()
-            .block(Block::default().title(" 🔍 SCAN PROGRESS ").borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title(" 🔍 SCAN PROGRESS ")
+                    .borders(Borders::ALL),
+            )
             .gauge_style(Style::default().fg(Color::Yellow))
             .ratio(0.7);
         f.render_widget(progress, chunks[3]);
     } else {
-        let progress = Paragraph::new("Press ENTER to start scan")
-            .block(Block::default().title(" 🔍 SCAN ENGINE ").borders(Borders::ALL));
+        let progress = Paragraph::new("Press ENTER to start scan").block(
+            Block::default()
+                .title(" 🔍 SCAN ENGINE ")
+                .borders(Borders::ALL),
+        );
         f.render_widget(progress, chunks[3]);
     }
 
@@ -235,8 +301,11 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
         .constraints([Constraint::Percentage(40), Constraint::Percentage(60)].as_ref())
         .split(chunks[4]);
 
-    let input = Paragraph::new(app.input.as_str())
-        .block(Block::default().title(" 🎯 ENTER TARGET ID ").borders(Borders::ALL));
+    let input = Paragraph::new(app.input.as_str()).block(
+        Block::default()
+            .title(" 🎯 ENTER TARGET ID ")
+            .borders(Borders::ALL),
+    );
     f.render_widget(input, bottom_chunks[0]);
 
     let log_items: Vec<ListItem> = app
@@ -244,14 +313,19 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
         .iter()
         .rev()
         .take(6)
-        .map(|log| ListItem::new(Line::from(vec![
-            Span::styled("●", Style::default().fg(Color::Green)),
-            Span::raw(" "),
-            Span::raw(log),
-        ])))
+        .map(|log| {
+            ListItem::new(Line::from(vec![
+                Span::styled("●", Style::default().fg(Color::Green)),
+                Span::raw(" "),
+                Span::raw(log),
+            ]))
+        })
         .collect();
 
-    let logs = List::new(log_items)
-        .block(Block::default().title(" 📜 SYSTEM LOGS ").borders(Borders::ALL));
+    let logs = List::new(log_items).block(
+        Block::default()
+            .title(" 📜 SYSTEM LOGS ")
+            .borders(Borders::ALL),
+    );
     f.render_widget(logs, bottom_chunks[1]);
 }

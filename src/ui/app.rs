@@ -7,10 +7,14 @@ use crate::core::engine::ReconResult;
 #[derive(Clone)]
 pub struct Target {
     pub id: String,
+    pub label: Option<String>,
     pub status: Status,
     pub hits: usize,
     pub emails: Vec<String>,
     pub platforms: Vec<String>,
+    pub failed: Vec<String>,
+    pub restricted: Vec<String>,
+    pub rate_limited: Vec<String>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -55,12 +59,20 @@ impl App {
     }
 
     pub fn add_target(&mut self, id: String) {
+        self.add_target_with_label(id, None);
+    }
+
+    pub fn add_target_with_label(&mut self, id: String, label: Option<String>) {
         self.targets.push(Target {
             id: id.clone(),
+            label,
             status: Status::Empty,
             hits: 0,
             emails: vec![],
             platforms: vec![],
+            failed: vec![],
+            restricted: vec![],
+            rate_limited: vec![],
         });
         self.log(format!("[+] Target added: {}", id));
     }
@@ -77,10 +89,7 @@ impl App {
             target.id.clone()
         };
         self.scanning = true;
-        self.log(format!(
-            "🦅 SCANNING {} across 348 platforms...",
-            target_id
-        ));
+        self.log(format!("🦅 SCANNING {} across 348 platforms...", target_id));
         Some((idx, target_id))
     }
 
@@ -90,6 +99,9 @@ impl App {
             target.hits = outcome.hits;
             target.emails.clear();
             target.platforms = outcome.platforms;
+            target.failed = outcome.failed;
+            target.restricted = outcome.restricted;
+            target.rate_limited = outcome.rate_limited;
             let id = target.id.clone();
             let hits = target.hits;
             self.log(format!("✅ {} - {} hits found!", id, hits));
@@ -113,8 +125,11 @@ impl App {
     }
 
     pub fn log(&mut self, msg: impl Into<String>) {
-        self.logs
-            .push(format!("[{}] {}", Local::now().format("%H:%M:%S"), msg.into()));
+        self.logs.push(format!(
+            "[{}] {}",
+            Local::now().format("%H:%M:%S"),
+            msg.into()
+        ));
         if self.logs.len() > 10 {
             self.logs.remove(0);
         }

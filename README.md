@@ -1,74 +1,89 @@
-# 🦅 **BLOODY-FALCON**
+# 🦅 BLOODY-F4LCON
 
-![Rust 1.75+](https://img.shields.io/badge/rust-1.75%2B-orange?logo=rust&logoColor=white)
-![Tokio](https://img.shields.io/badge/async-Tokio-blueviolet?logo=rust&labelColor=111)
-![UI](https://img.shields.io/badge/tui-ratatui-red?logo=terminal&labelColor=111)
-![License](https://img.shields.io/badge/license-MIT-green?labelColor=111)
+Terminal-first OSINT recon for usernames. Red/Black vibe, production-hardening: rate limiting, cache, configurable providers, headless JSON mode.
 
-**OSINT Terminal Framework**  
-*Red/Black aesthetic. Minimal noise. Maximum signal.*
+## ✨ Features
+- Live provider checks (GitHub, Reddit, Steam, Twitter, PSNProfiles by default)
+- Rate limiting + backoff, cache with TTL
+- Configurable providers/user-agent via TOML
+- TUI with active targets, intel feed, logs
+- Headless mode (`--no-tui`) for scripting
+- Tracing to stdout + `data/falcon.log`
 
-```
-[SYSTEM] BLOODY-FALCON v1.0 BOOT
-[SYSTEM] THIRD-EYE PROTOCOL ACTIVE
-[SYSTEM] 348 PLATFORMS MAPPED
-[SYSTEM] AWAITING TARGET IDENTIFIER
-```
-
-Keep fingers on the keys. Paint the terminal red.
-
----
-
-## ⚡ Why Use It
-- Razor-fast TUI: zero mouse, zero distractions.
-- Live target stack: switch with `TAB`, scan with `ENTER`.
-- Synth wave log rail: rolling system feed stays visible.
-- Ready for modules: recon, breach, crosslink stubs already wired.
-- Pure Rust + Tokio + Ratatui + Crossterm.
-
-## 🚀 Install & Run
+## 📦 Install
+**From repo**
 ```bash
 cargo install --path .
-bloody-falcon
 ```
 
-> Runs locally; ships with simulated hits for demo safety.
-
-## 🎮 Controls
-- `ENTER` → Scan current target (or add if input filled)
-- `TAB`   → Switch target
-- `q`     → Exit
-- `Backspace` → Delete input char
-
-## 🖥️ Screen Layout
-- Header: BLOODY-FALCON | platform count | hint strip.
-- Targets: indexed list with status + hit counter.
-- Intel Feed: status, hit count, harvested emails, platform list.
-- Scan Engine: progress gauge while running, prompt when idle.
-- Input & Logs: target input left, rolling log rail right.
-
-## 📦 Project Map
-```
-src/
-  main.rs          # TUI runtime + app state
-  ui/              # UI composition stubs
-  core/            # engine/logger stubs
-  modules/         # recon | breach | crosslink stubs
-assets/            # ascii + theme hooks
-docs/              # screenshots, docs
-tests/             # future integration tests
+**Direct from Git**
+```bash
+cargo install --git git@github.com:ind4skylivey/bloody-f4lcon.git
 ```
 
-## 🔧 Dev Notes
-- Language: English only. No co-author trailers.
-- Keep SOLID/DRY; avoid `.unwrap()` in production paths.
-- Add real module logic under `src/modules/` (keep demo data synthetic).
+## 🚀 Quick Start
+```bash
+# Scan "shadow" with defaults
+bloody-f4lcon shadow
 
-## 🗺️ Roadmap (shortlist)
-- Plug real recon providers behind async traits.
-- Theme pack loader (assets/themes).
-- Config file in `config/` with profile switching.
-- Export scan results to JSON/NDJSON.
+# Limit to GitHub + Reddit
+bloody-f4lcon shadow --providers github,reddit
+
+# Disable cache
+bloody-f4lcon shadow --no-cache
+
+# Custom config
+bloody-f4lcon shadow --config config/bloodyf4lcon.toml
+
+# Headless JSON (no TUI)
+bloody-f4lcon shadow --no-tui > result.json
+```
+
+## 🎮 TUI Controls
+- ENTER → Scan current target (or add if input filled)
+- TAB → Switch target
+- q → Exit
+- Backspace → Delete input
+
+Panels:
+- Header: version + platform count + hint strip
+- Active Targets: index, id, hits, status
+- Intel Feed: status, hits, platforms, restricted/rate-limited/failed, optional label
+- Scan Engine: progress gauge or prompt
+- System Logs: rolling feed
+
+## ⚙️ Configuration
+File: `config/bloodyf4lcon.toml`
+```toml
+timeout_ms = 5000
+max_concurrent_requests = 5
+cache_ttl_seconds = 600
+user_agent = "bloody-f4lcon/1.0 (+https://github.com/ind4skylivey/bloody-f4lcon)"
+
+[[providers]]
+name = "github"
+enabled = true
+base_url = "https://github.com/{username}"
+# ... add more providers as needed
+```
+Flags override pieces:
+- `--config <path>` load alternate file
+- `--providers a,b,c` enable subset (case-insensitive)
+- `--no-cache` disable cache
+- `--verbose` (repeat for debug/trace)
+- `--log-file <path>` change log destination
+- `--no-tui` headless JSON
+
+## 🧪 Development
+- Format: `cargo fmt`
+- Lint: `cargo clippy -- -D warnings`
+- Test: `cargo test`
+
+GitHub Actions CI runs fmt + clippy + tests.
+
+## ⚖️ Legal / Ethical
+Use only on targets you are authorized to probe. OSINT still carries privacy and ToS considerations. You are responsible for respecting platform policies and local laws.
 
 ## 📸 Visual
 ![demo](docs/screenshot.png)
+

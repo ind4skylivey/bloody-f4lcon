@@ -5,3 +5,4 @@ target/
 .vscode/
 .idea/
 data/*.sqlite
+data/falcon.log
