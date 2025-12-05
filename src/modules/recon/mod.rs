@@ -1,1 +1,3 @@
-//! Reconnaissance module placeholder.
+//! Reconnaissance module.
+
+pub mod username;

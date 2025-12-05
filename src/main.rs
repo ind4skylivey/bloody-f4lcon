@@ -1,4 +1,5 @@
-use std::{io, time::Duration};
+use std::io;
+use std::time::Duration;
 
 use chrono::Local;
 use crossterm::{
@@ -6,7 +7,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use rand::Rng;
+use bloody_falcon::modules::recon::username::{scan_username, ScanOutcome};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -15,6 +16,7 @@ use ratatui::{
     widgets::{Block, Borders, Gauge, List, ListItem, Paragraph},
     Terminal,
 };
+use tokio::task::JoinHandle;
 
 #[derive(Clone)]
 struct Target {
@@ -77,41 +79,22 @@ impl App {
         self.log(&format!("[+] Target added: {}", id));
     }
 
-    fn scan_target(&mut self, index: usize) {
-        if index < self.targets.len() {
-            let target_id = {
-                let target = &mut self.targets[index];
-                target.status = Status::Scanning;
-                target.id.clone()
-            };
-            self.scanning = true;
-            self.log(&format!("🦅 SCANNING {} across 348 platforms...", target_id));
+    fn start_scan(&mut self) -> Option<(usize, String)> {
+        if self.targets.is_empty() {
+            return None;
         }
-    }
-
-    fn simulate_scan(&mut self) {
-        let mut log_entry = None;
-        if let Some(target) = self.targets.get_mut(self.current_target) {
-            let mut rng = rand::thread_rng();
-            target.status = Status::Found;
-            target.hits = rng.gen_range(5..30);
-            target.emails = vec![
-                format!("{}@example.com", target.id),
-                format!("{}@outlook.com", target.id),
-            ];
-            target.platforms = vec![
-                "GitHub".to_string(),
-                "Reddit".to_string(),
-                "Steam".to_string(),
-                "Twitter".to_string(),
-                "PSN".to_string(),
-            ];
-            log_entry = Some((target.id.clone(), target.hits));
-        }
-        if let Some((id, hits)) = log_entry {
-            self.log(&format!("✅ {} - {} hits found!", id, hits));
-        }
-        self.scanning = false;
+        let idx = self.current_target.min(self.targets.len() - 1);
+        let target_id = {
+            let target = &mut self.targets[idx];
+            target.status = Status::Scanning;
+            target.id.clone()
+        };
+        self.scanning = true;
+        self.log(&format!(
+            "🦅 SCANNING {} across 348 platforms...",
+            target_id
+        ));
+        Some((idx, target_id))
     }
 
     fn log(&mut self, msg: &str) {
@@ -125,6 +108,27 @@ impl App {
     fn next_target(&mut self) {
         self.current_target = (self.current_target + 1) % self.targets.len().max(1);
     }
+
+    fn complete_scan(&mut self, idx: usize, outcome: ScanOutcome) {
+        if let Some(target) = self.targets.get_mut(idx) {
+            target.status = Status::Found;
+            target.hits = outcome.hits;
+            target.emails = outcome.emails;
+            target.platforms = outcome.platforms;
+            let id = target.id.clone();
+            let hits = target.hits;
+            self.log(&format!("✅ {} - {} hits found!", id, hits));
+        }
+        self.scanning = false;
+    }
+
+    fn fail_scan(&mut self, idx: usize, err: &str) {
+        if let Some(target) = self.targets.get_mut(idx) {
+            target.status = Status::Empty;
+        }
+        self.log(&format!("⚠️ Scan failed on target {}: {}", idx, err));
+        self.scanning = false;
+    }
 }
 
 #[tokio::main]
@@ -137,7 +141,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new();
-    let mut scan_timer = tokio::time::interval(Duration::from_secs(2));
+    let mut scan_task: Option<(usize, JoinHandle<anyhow::Result<ScanOutcome>>)> = None;
 
     loop {
         terminal.draw(|f| ui(f, &app))?;
@@ -150,8 +154,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if app.input.trim().is_empty() {
                             if app.targets.is_empty() {
                                 app.add_target("shadow".to_string());
-                            } else {
-                                app.scan_target(app.current_target);
+                            }
+                            if scan_task.is_none() {
+                                if let Some((idx, id)) = app.start_scan() {
+                                    let handle = tokio::spawn(scan_username(id));
+                                    scan_task = Some((idx, handle));
+                                }
                             }
                         } else {
                             app.add_target(app.input.clone());
@@ -168,10 +176,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // Async scan simulation
-        if app.scanning {
-            scan_timer.tick().await;
-            app.simulate_scan();
+        // Async scan completion handling
+        if let Some((idx, handle)) = scan_task.take() {
+            if handle.is_finished() {
+                match handle.await {
+                    Ok(Ok(outcome)) => app.complete_scan(idx, outcome),
+                    Ok(Err(err)) => app.fail_scan(idx, &err.to_string()),
+                    Err(join_err) => app.fail_scan(idx, &join_err.to_string()),
+                }
+            } else {
+                scan_task = Some((idx, handle));
+            }
         }
     }
 
