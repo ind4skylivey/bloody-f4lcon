@@ -192,7 +192,7 @@ fn draw_ui(f: &mut ratatui::Frame, app: &App) {
         Line::from(vec![
             Span::styled("Label: ", Style::default().fg(Color::White)),
             Span::styled(
-                current.label.as_ref().map(|s| s.as_str()).unwrap_or("None"),
+                current.label.as_deref().unwrap_or("None"),
                 Style::default().fg(Color::Gray),
             ),
         ]),

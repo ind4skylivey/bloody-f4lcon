@@ -71,7 +71,7 @@ impl Engine {
         let mut restricted = Vec::new();
         let mut rate_limited = Vec::new();
 
-        for provider in self.config.providers.iter().cloned().filter(|p| p.enabled) {
+        for provider in self.config.providers.iter().filter(|p| p.enabled).cloned() {
             let permit = self
                 .semaphore
                 .acquire()
