@@ -1,13 +1,16 @@
-use std::io;
-use std::time::Duration;
+use std::{io, path::PathBuf, time::Duration};
 
+use bloody_falcon::{
+    config::{apply_provider_filter, load_config},
+    core::engine::{Engine, ReconResult},
+};
 use chrono::Local;
+use clap::Parser;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use bloody_falcon::modules::recon::username::{scan_username, ScanOutcome};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -50,6 +53,22 @@ struct App {
     input: String,
     logs: Vec<String>,
     scanning: bool,
+}
+
+#[derive(Parser, Debug)]
+#[command(name = "bloody-f4lcon", about = "OSINT terminal recon with live provider checks")]
+struct Cli {
+    /// Path to config file (TOML)
+    #[arg(long, default_value = "config/bloodyf4lcon.toml")]
+    config: String,
+    /// Comma-separated provider names to enable (case-insensitive)
+    #[arg(long, value_delimiter = ',')]
+    providers: Option<Vec<String>>,
+    /// Disable in-memory cache
+    #[arg(long)]
+    no_cache: bool,
+    /// Optional initial target
+    target: Option<String>,
 }
 
 impl App {
@@ -109,7 +128,7 @@ impl App {
         self.current_target = (self.current_target + 1) % self.targets.len().max(1);
     }
 
-    fn complete_scan(&mut self, idx: usize, outcome: ScanOutcome) {
+    fn complete_scan(&mut self, idx: usize, outcome: ReconResult) {
         if let Some(target) = self.targets.get_mut(idx) {
             target.status = Status::Found;
             target.hits = outcome.hits;
@@ -124,15 +143,24 @@ impl App {
 
     fn fail_scan(&mut self, idx: usize, err: &str) {
         if let Some(target) = self.targets.get_mut(idx) {
+            let id = target.id.clone();
             target.status = Status::Empty;
+            self.log(&format!("⚠️ Scan failed on {}: {}", id, err));
+        } else {
+            self.log(&format!("⚠️ Scan failed: {}", err));
         }
-        self.log(&format!("⚠️ Scan failed on target {}: {}", idx, err));
         self.scanning = false;
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cli = Cli::parse();
+    let cfg_path = PathBuf::from(cli.config.clone());
+    let cfg = apply_provider_filter(load_config(&cfg_path)?, cli.providers.as_deref());
+    let engine = Engine::new(cfg)?;
+    let use_cache = !cli.no_cache;
+
     // Terminal setup
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -141,7 +169,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new();
-    let mut scan_task: Option<(usize, JoinHandle<anyhow::Result<ScanOutcome>>)> = None;
+    if let Some(initial) = cli.target {
+        app.add_target(initial);
+    }
+    let mut scan_task: Option<(usize, JoinHandle<Result<ReconResult, bloody_falcon::core::error::FalconError>>)> =
+        None;
 
     loop {
         terminal.draw(|f| ui(f, &app))?;
@@ -157,7 +189,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             if scan_task.is_none() {
                                 if let Some((idx, id)) = app.start_scan() {
-                                    let handle = tokio::spawn(scan_username(id));
+                                    let engine = engine.clone();
+                                    let handle = tokio::spawn(async move {
+                                        engine.scan_username(&id, use_cache).await
+                                    });
                                     scan_task = Some((idx, handle));
                                 }
                             }

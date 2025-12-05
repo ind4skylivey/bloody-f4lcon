@@ -4,3 +4,4 @@ target/
 *.log
 .vscode/
 .idea/
+data/*.sqlite
