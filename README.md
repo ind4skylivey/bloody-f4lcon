@@ -1,5 +1,10 @@
 # 🦅 **BLOODY-FALCON**
 
+![Rust 1.75+](https://img.shields.io/badge/rust-1.75%2B-orange?logo=rust&logoColor=white)
+![Tokio](https://img.shields.io/badge/async-Tokio-blueviolet?logo=rust&labelColor=111)
+![UI](https://img.shields.io/badge/tui-ratatui-red?logo=terminal&labelColor=111)
+![License](https://img.shields.io/badge/license-MIT-green?labelColor=111)
+
 **OSINT Terminal Framework**  
 *Red/Black aesthetic. Minimal noise. Maximum signal.*
 
